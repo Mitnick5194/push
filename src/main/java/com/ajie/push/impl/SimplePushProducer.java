@@ -13,6 +13,7 @@ import org.springframework.jms.core.JmsTemplate;
 import com.ajie.chilli.common.KVpair;
 import com.ajie.chilli.support.TimingTask;
 import com.ajie.chilli.support.Worker;
+import com.ajie.chilli.thread.ThreadPool;
 import com.ajie.push.Message;
 import com.ajie.push.PushProducer;
 import com.ajie.push.exception.PushException;
@@ -28,6 +29,8 @@ public class SimplePushProducer implements PushProducer {
 			.getLogger(SimplePushProducer.class);
 	/** spring对发送消息进行了封装 */
 	private JmsTemplate template;
+	/** 线程池 */
+	private ThreadPool threadPool;
 
 	public SimplePushProducer(JmsTemplate temp) {
 		template = temp;
@@ -40,12 +43,15 @@ public class SimplePushProducer implements PushProducer {
 		template.send(destination, message);
 	}
 
+	public void setThreadPool(ThreadPool pool) {
+		threadPool = pool;
+	}
+
 	@Override
 	public void sendDelay(final Message msg, long delay) {
 		final Destination destination = getDestination(msg);
 		assertNotNull(destination);
-		// XXX使用线程池
-		TimingTask.createTimingTask(new Worker() {
+		TimingTask.createTimingTask(threadPool, new Worker() {
 			@Override
 			public void work() throws Exception {
 				template.send(destination, msg);
@@ -61,8 +67,7 @@ public class SimplePushProducer implements PushProducer {
 			template.send(destination, msg);
 		} catch (Exception e) {
 			logger.warn("发送失败，1秒后重试", e);
-			TimingTask.createTimingTask(new Worker() {
-
+			TimingTask.createTimingTask(threadPool, new Worker() {
 				int count = 0;
 
 				@Override
@@ -73,18 +78,8 @@ public class SimplePushProducer implements PushProducer {
 						Thread.interrupted();
 					}
 				}
-			}, new Date(System.currentTimeMillis() + interval), interval);
+			}, interval, interval);
 		}
-
-		TimingTask.createTimingTask(new Worker() {
-
-			@Override
-			public void work() throws Exception {
-				// TODO Auto-generated method stub
-
-			}
-		}, new Date(System.currentTimeMillis() + interval), retry);
-
 	}
 
 	@Override
